@@ -1,0 +1,46 @@
+frontend internal
+	bind 10.0.0.1:80
+	mode http
+	default_backend default
+	acl host-app hdr(host) -i app.example.com
+	acl path-api path_beg /api
+	acl src-lan src 10.0.0.0/8
+	use_backend app if host-app
+	use_backend api unless host-app or path-api
+	use_backend api if src-lan path-api
+	http-request set-header X-Forwarded-Proto https if host-app
+	option forwardfor
+	option httplog
+
+frontend public
+	bind 0.0.0.0:443
+	bind [::]:443
+	mode tcp
+	default_backend default
+
+backend api
+	mode tcp
+	balance leastconn
+	stick-table type ip size 200k expire 30m
+	stick on src
+	acl src-lan src 10.0.0.0/8
+	use-server node-1 if src-lan
+	option redispatch
+	server node-1 10.0.0.11:30081 weight 10 maxconn 100 check port 30081 inter 2000 downinter 500 fall 3 rise 2 source 10.0.0.1
+	server node-2 10.0.0.12:30081 check inter 1000 fall 3 rise 2 backup
+	server node-3 10.0.0.13:30081 disabled
+
+backend app
+	mode http
+	balance roundrobin
+	option httpchk GET /healthz
+	acl src-lan src 10.0.0.0/8
+	http-request set-header X-Backend app if src-lan
+	server node-1 10.0.0.11:30080 weight 50 check inter 2000 fall 3 rise 2
+	server node-2 10.0.0.12:30080 check inter 2000 fall 3 rise 2 backup
+	retries 3
+
+backend default
+	mode http
+	balance source
+	server default 10.0.0.99:30082
