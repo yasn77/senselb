@@ -1,0 +1,32 @@
+# Pinned toolchain for senselb.
+# Resolve new versions with `mise latest <tool>`, then pin the resolved value here.
+
+[tools]
+go = "1.27.3"
+golangci-lint = "2.15.0"
+goreleaser = "2.19.0"
+helm = "4.3.1"
+
+[tasks.build]
+description = "Compile every package in the module."
+run = "go build ./..."
+
+[tasks.test]
+description = "Run the full test suite."
+run = "go test ./..."
+
+[tasks.vet]
+description = "Run the Go vet static analyser."
+run = "go vet ./..."
+
+[tasks.lint]
+description = "Run golangci-lint over the module."
+run = "golangci-lint run ./..."
+
+[tasks.docker-build]
+description = "Placeholder container build; finalised in Phase 5."
+run = "goreleaser build --snapshot --clean"
+
+[tasks.helm-lint]
+description = "Lint the Helm chart when it exists (chart arrives in Phase 5)."
+run = "test -d charts/senselb && helm lint charts/senselb || true"

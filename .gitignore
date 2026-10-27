@@ -1,0 +1,8 @@
+/bin/
+/dist/
+*.tgz
+.env
+coverage.out
+*.test
+.cache/
+.mise.local.toml
