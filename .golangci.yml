@@ -1,0 +1,33 @@
+# golangci-lint configuration for senselb.
+#
+# Schema version: this file targets golangci-lint v2 (pinned in .mise.toml).
+# Verify changes with: golangci-lint config verify
+version: "2"
+
+linters:
+  # "standard" enables errcheck, govet, ineffassign, staticcheck and unused.
+  default: standard
+  enable:
+    - bodyclose
+    - gocritic
+    - gosec
+    - misspell
+    - revive
+
+  settings:
+    misspell:
+      # Oxford spelling: -ise/-isation, "behaviour", "colour", "artefact".
+      locale: UK
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+
+formatters:
+  # gofmt was moved out of linters into formatters in golangci-lint v2.
+  enable:
+    - gofmt

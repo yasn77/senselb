@@ -1,0 +1,61 @@
+# Continuous integration for senselb.
+#
+# Runs the same four mise checks a developer runs locally, against the same
+# toolchain pinned in .mise.toml, so CI and local development cannot drift
+# apart. The four checks are deliberately separate steps: a red build reports
+# which check failed without reading the log.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Least privilege: the checks only read the repository.
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Build, test, vet and lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # Installs mise itself and puts it on PATH. Tool installation is left to
+      # the `mise install` step below, so a toolchain failure is attributable
+      # to that step rather than to this action.
+      - name: Install mise
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          install: false
+
+      # Go build and module caches. Keyed on go.sum as well as go.mod so the
+      # cache invalidates once the module gains dependencies; until go.sum
+      # exists, hashFiles simply ignores the unmatched pattern.
+      - name: Cache the Go build and module caches
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-
+
+      - name: Install the pinned toolchain
+        run: mise install
+
+      - name: build
+        run: mise run build
+
+      - name: test
+        run: mise run test
+
+      - name: vet
+        run: mise run vet
+
+      - name: lint
+        run: mise run lint
