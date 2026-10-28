@@ -1,0 +1,17 @@
+{{- $provider := deepCopy (omit .Values.provider "secret") }}
+{{- $_ := set $provider "secretName" (include "senselb.providerSecretName" .) }}
+{{- $document := deepCopy (omit .Values.config "name") }}
+{{- $_ := set $document "provider" $provider }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.config.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "senselb.labels" . | nindent 4 }}
+data:
+  # Read once at startup by pkg/config.Load, which rejects unknown keys and
+  # validates the result. A change needs a restart: the Deployment carries a
+  # checksum of this object so a Helm upgrade rolls the pod.
+  config.yaml: |
+    {{- toYaml $document | nindent 4 }}

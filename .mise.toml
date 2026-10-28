@@ -24,9 +24,16 @@ description = "Run golangci-lint over the module."
 run = "golangci-lint run ./..."
 
 [tasks.docker-build]
-description = "Placeholder container build; finalised in Phase 5."
-run = "goreleaser build --snapshot --clean"
+description = "Snapshot release: binaries, archives, checksums and the chart, plus the container image when a Docker daemon is reachable."
+run = """
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  goreleaser release --snapshot --clean
+else
+  echo "Docker is unavailable: building the snapshot without the container image."
+  goreleaser release --snapshot --clean --skip=docker
+fi
+"""
 
 [tasks.helm-lint]
-description = "Lint the Helm chart when it exists (chart arrives in Phase 5)."
-run = "test -d charts/senselb && helm lint charts/senselb || true"
+description = "Lint the Helm chart in strict mode."
+run = "helm lint --strict charts/senselb"

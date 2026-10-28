@@ -1,0 +1,62 @@
+senselb {{ .Chart.AppVersion }} is installed as release {{ .Release.Name }} in
+namespace {{ .Release.Namespace }}.
+
+1. Configure the listeners
+   The controller reads one ConfigMap once, at startup:
+
+     kubectl -n {{ .Release.Namespace }} get configmap {{ .Values.config.name }}
+
+   Its "config.yaml" key holds the listeners, the cluster-wide annotation
+   defaults and the provider block. A hand edit needs a restart of the pod:
+
+     kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "senselb.controllerName" . }}
+
+   A Helm upgrade rolls the pod on its own, because the Deployment carries a
+   checksum of the ConfigMap.
+
+2. Create the provider Secret
+   The chart does not create a usable credential. Put the OPNsense API key and
+   secret in a Secret named {{ include "senselb.providerSecretName" . }}, created
+   by your GitOps secret manager and never committed.
+
+   For local trials only, the shape of that Secret is:
+
+     kubectl -n {{ .Release.Namespace }} create secret generic {{ include "senselb.providerSecretName" . }} \
+       --from-literal=key=<key> \
+       --from-literal=secret=<secret> \
+       --from-literal=url=https://<firewall>:<port>/api/haproxy
+
+   That command is an illustration, not a deployment step: production applies
+   the Secret through your GitOps secret manager.
+
+   The keys are "key", "secret" and, optionally, "url". A non-empty "url" in the
+   Secret overrides provider.url in the ConfigMap (ADR 0005). The optional CA
+   bundle is a separate Secret named by provider.caCertSecretName, under the key
+   "ca.crt".
+{{- if .Values.provider.secret.create }}
+
+   WARNING: provider.secret.create is true, so this release rendered an EMPTY
+   placeholder Secret. Replace it out of band before relying on the controller;
+   as it stands the controller will not start.
+{{- end }}
+
+3. Decide how each listener is provisioned
+   A listener with "adopt: true" attaches senselb's routing rules to a frontend
+   that already exists in HAProxy and leaves foreign configuration on it intact.
+   A listener with "bind" has its frontend created by senselb. Both shapes are
+   recorded in docs/adr: 0002 for the address model, 0004 for ownership and
+   conflict handling.
+
+4. Watch what the controller does
+   Conditions land on each Service, and Events land in the Service's namespace:
+
+     kubectl -n <service-namespace> describe service <name>
+     kubectl -n <service-namespace> get events --field-selector involvedObject.name=<name>
+
+   The Ready and Error conditions report the last reconcile. The cluster-wide
+   Events grant exists for this reason: an Event is filed where its Service
+   lives, not in {{ .Release.Namespace }}.
+
+Metrics are served on port {{ .Values.metrics.service.port }} of the
+{{ include "senselb.fullname" . }}-metrics Service when metrics.service.enabled
+is true. No ServiceMonitor is rendered; point your own monitoring stack at it.
