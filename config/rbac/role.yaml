@@ -1,0 +1,70 @@
+# RBAC for the senselb controller.
+#
+# Two scopes, deliberately split:
+#
+#   * The ClusterRole holds what must reach any namespace: the Services senselb
+#     publishes, the Nodes and EndpointSlices their backends come from, and the
+#     Events it publishes.
+#   * The Role holds what only ever touches the controller's own namespace: the
+#     ConfigMap store, the provider Secret and the leader-election Lease.
+#
+# Events belong to the ClusterRole because the recorder files each Event in the
+# namespace of its involved object - the Service's namespace, not the
+# controller's. A namespaced grant would 403 on every Service outside
+# senselb-system.
+#
+# Deviation from the plan's settled permission list, recorded here as required:
+# services need write verbs because the finalizer flow adds and removes
+# "senselb.io/finalizer" on the Service object, and coordination.k8s.io/leases
+# needs create/update because controller-runtime acquires leader election
+# through a Lease. Neither broadens a resource beyond what the code does.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: senselb-controller
+rules:
+  # The reconciler reads every LoadBalancer Service and updates it to add or
+  # remove the finalizer. Status is written through the status subresource.
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["services/status"]
+    verbs: ["get", "update", "patch"]
+  # Events. The recorder creates each Event in the namespace of its involved
+  # object, which is the Service's namespace, so this grant cannot be namespaced
+  # to the controller. Patch covers the recorder's aggregation of a repeated
+  # event onto a single object; the classic recorder only creates.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # Backend targets: ready Nodes for nodeport mode, EndpointSlices for
+  # endpoint mode. Read-only.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+---
+# Namespaced permissions, bound in the controller's own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: senselb-controller
+  namespace: senselb-system
+rules:
+  # The ConfigMap store is read, created on first use, and updated. It needs no
+  # list or watch: the store addresses one named object through a direct client.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+  # The provider credentials and the optional CA bundle are read once at
+  # startup, by name.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  # Leader election, so exactly one replica programs the firewall.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]

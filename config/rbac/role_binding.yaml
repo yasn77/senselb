@@ -1,0 +1,32 @@
+# Binds the two senselb-controller RBAC documents to its ServiceAccount.
+#
+# The RoleBinding grants the namespaced permissions (store ConfigMap, provider
+# Secret, Lease) in the controller namespace. The ClusterRoleBinding grants the
+# cluster-wide read and Service write permissions, and the Events grant, which
+# is cluster-wide because each Event lands in its Service's namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: senselb-controller
+  namespace: senselb-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: senselb-controller
+subjects:
+  - kind: ServiceAccount
+    name: senselb-controller
+    namespace: senselb-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: senselb-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: senselb-controller
+subjects:
+  - kind: ServiceAccount
+    name: senselb-controller
+    namespace: senselb-system
