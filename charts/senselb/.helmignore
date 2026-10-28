@@ -1,0 +1,12 @@
+# Patterns ignored when packaging the chart.
+.DS_Store
+.git/
+.gitignore
+.helmignore
+*.tgz
+*.orig
+*.tmp
+*.swp
+*.bak
+README.md
+values.local.yaml

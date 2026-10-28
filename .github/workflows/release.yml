@@ -1,0 +1,98 @@
+# Release workflow for senselb.
+#
+# A v* tag is the only trigger: it runs the same gates as continuous
+# integration, then goreleaser publishes the binaries, the archives, the
+# checksums and the multi-platform container image, and the packaged Helm chart
+# is pushed to GHCR as an OCI artifact.
+#
+# Every credential comes from the workflow token; no secret is stored in the
+# repository. The action pins match ci.yml so the two workflows install the same
+# mise version.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Publishing needs write access to the release and to the container registry.
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    steps:
+      # goreleaser reads the full history and every tag to build the changelog
+      # and to resolve the version, so the default shallow clone is not enough.
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install mise
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          install: false
+
+      - name: Install the pinned toolchain
+        run: mise install
+
+      # The release gates: a tag that does not build, test, vet and lint clean
+      # must never become a release.
+      - name: build
+        run: mise run build
+
+      - name: test
+        run: mise run test
+
+      - name: vet
+        run: mise run vet
+
+      - name: lint
+        run: mise run lint
+
+      # The release publishes the chart, so lint it with the same strict task a
+      # developer runs locally before it is packaged.
+      - name: helm-lint
+        run: mise run helm-lint
+
+      # dockers_v2 builds a multi-platform manifest with buildx. The default
+      # docker driver cannot produce one, so create a container-driver builder.
+      # The Dockerfile only copies goreleaser's pre-built binaries, so the arm64
+      # layer needs no emulation.
+      - name: Set up the multi-platform Docker builder
+        run: docker buildx create --name senselb --use --driver docker-container --bootstrap
+
+      # goreleaser pushes the container image in its publish phase; log in
+      # first. The token is passed through the environment, never the command
+      # line.
+      - name: Log in to the GitHub Container Registry
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise exec -- goreleaser release --clean
+
+      # The chart archive is produced by goreleaser's before-hook, which stamps
+      # the release version into the chart version and appVersion. Pushing it
+      # here rather than in goreleaser keeps the chart integration to one
+      # documented step; the archive is also attached to the GitHub release.
+      - name: Push the Helm chart to the GitHub Container Registry
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          chart=$(ls chart-dist/senselb-*.tgz)
+          version=$(basename "$chart" .tgz)
+          version=${version#senselb-}
+          printf '%s' "$GITHUB_TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push "$chart" oci://ghcr.io/yasn77
+          echo "Pushed oci://ghcr.io/yasn77/senselb:${version}"

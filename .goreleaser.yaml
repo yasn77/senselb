@@ -1,0 +1,101 @@
+# Release configuration for senselb.
+#
+# Validated against the goreleaser release pinned in .mise.toml (2.19.0) with
+# `goreleaser check`. The release workflow runs this file on a v* tag; a local
+# `mise run docker-build` runs the same pipeline in snapshot mode.
+version: 2
+
+project_name: senselb
+
+dist: dist
+
+before:
+  hooks:
+    # Package the Helm chart with the release version stamped into both the
+    # chart version and appVersion. `helm package` writes those values into the
+    # packaged archive, so the tracked Chart.yaml keeps its placeholders and no
+    # file is rewritten during a release.
+    #
+    # The archive goes to chart-dist/, not dist/: goreleaser requires dist/ to
+    # be empty when the pipeline starts, and a before-hook runs first. The
+    # directory is recreated on every run so a stale archive from an earlier
+    # version cannot be uploaded.
+    - sh -c 'rm -rf chart-dist && helm package charts/senselb --destination chart-dist --version {{ .Version }} --app-version {{ .Version }}'
+
+builds:
+  - id: senselb-controller
+    main: ./cmd/senselb-controller
+    binary: senselb-controller
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    # -X main.version matches the package-level variable in
+    # cmd/senselb-controller/main.go, which prints it for --version and logs it
+    # at startup.
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: senselb
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+dockers_v2:
+  - id: senselb
+    ids:
+      - senselb-controller
+    dockerfile: Dockerfile
+    images:
+      - ghcr.io/yasn77/senselb
+    # A snapshot build appends a platform suffix; a release pushes the version
+    # tag and, for a stable version only, latest.
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.source": "{{ .GitURL }}"
+
+snapshot:
+  # A snapshot is not a tag: base it on the next patch so two snapshots of the
+  # same commit cannot claim the version a release will use.
+  version_template: "{{ incpatch .Version }}-dev"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "^build\\(deps\\)"
+      - "^Merge pull request"
+      - "^Merge branch"
+
+release:
+  github:
+    owner: yasn77
+    name: senselb
+  draft: false
+  prerelease: auto
+  # The packaged chart is published alongside the archives so a release carries
+  # the exact chart that was pushed to GHCR.
+  extra_files:
+    - glob: chart-dist/senselb-*.tgz

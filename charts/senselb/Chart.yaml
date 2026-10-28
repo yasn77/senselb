@@ -1,0 +1,23 @@
+# The senselb controller chart.
+#
+# appVersion stays at the goreleaser placeholder until the release workflow
+# stamps real versions; the image tag defaults to appVersion, so an install from
+# source must override image.tag.
+apiVersion: v2
+name: senselb
+description: A Kubernetes LoadBalancer controller that programs HAProxy on an OPNsense firewall.
+type: application
+version: 0.1.0
+appVersion: "0.0.0-dev"
+home: https://github.com/yasn77/senselb
+icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/kubernetes/icon/color/kubernetes-icon-color.svg
+sources:
+  - https://github.com/yasn77/senselb
+keywords:
+  - loadbalancer
+  - haproxy
+  - opnsense
+  - bare-metal
+maintainers:
+  - name: yasn77
+    url: https://github.com/yasn77

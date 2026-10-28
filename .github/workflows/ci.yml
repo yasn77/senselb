@@ -1,8 +1,8 @@
 # Continuous integration for senselb.
 #
-# Runs the same four mise checks a developer runs locally, against the same
+# Runs the same five mise checks a developer runs locally, against the same
 # toolchain pinned in .mise.toml, so CI and local development cannot drift
-# apart. The four checks are deliberately separate steps: a red build reports
+# apart. The five checks are deliberately separate steps: a red build reports
 # which check failed without reading the log.
 
 name: CI
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   checks:
-    name: Build, test, vet and lint
+    name: Build, test, vet, lint and helm-lint
     runs-on: ubuntu-latest
 
     steps:
@@ -59,3 +59,6 @@ jobs:
 
       - name: lint
         run: mise run lint
+
+      - name: helm-lint
+        run: mise run helm-lint

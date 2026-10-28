@@ -1,0 +1,97 @@
+# Reference LoadBalancer Service for senselb.
+#
+# The annotation set below reflects implemented behaviour. The full reference
+# lives in README.md; this file shows the common shape and the two target
+# modes.
+#
+# nodeport (the default) supplies one backend server per ready Node, addressed
+# by node IP and the Service's nodePort. It is the only mode that supports a
+# multi-port Service such as this one.
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: prod
+  annotations:
+    # Logical listener names from the controller ConfigMap. "external" is an
+    # adopted frontend (ingress-HTTPS); "external-http" is the adopted HTTP
+    # frontend. Neither has to be a firewall object name.
+    senselb.io/listeners: "external,external-http"
+
+    # Routing terms: host, path and sni. Each non-empty term becomes one ACL.
+    # With no routing term the rule is unconditional. v1 does not detect two
+    # Services claiming the same host:port on one listener, so keep host and
+    # path claims disjoint.
+    senselb.io/host: "app.example.com"
+
+    # nodeport is the default; it is stated here because it is required for a
+    # multi-port Service.
+    senselb.io/target-mode: "nodeport"
+
+    # HTTP health check against each backend server. The path is optional but
+    # should be set for an HTTP backend.
+    senselb.io/healthcheck: "true"
+    senselb.io/healthcheck-path: "/healthz"
+
+    # Unmodelled backend directives go here, one per line. The timeout-*
+    # annotations are accepted by the parser but rejected as unmodelled, so
+    # this is the supported way to express them.
+    senselb.io/backend-custom: |
+      timeout connect 5s
+      timeout server 50s
+
+    # Per-Service override of the ConfigMap default. Uncomment to apply.
+    # senselb.io/algorithm: "leastconn"
+
+    # The backend name is derived as senselb-<namespace>-<service>-<port>.
+    # To choose your own, it MUST start with "senselb-", the ownership prefix;
+    # with several ports a numeric suffix is appended.
+    # senselb.io/backend-name: "senselb-web-prod"
+spec:
+  type: LoadBalancer
+  selector:
+    app: web
+  ports:
+    # Both ports reach the same HTTP container port. In nodeport mode the
+    # backend server port is the NodePort, so targetPort only has to be the
+    # port the pod serves; TLS for the 443 frontend terminates on the adopted
+    # ingress-HTTPS frontend, not in the pod.
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 8080
+      protocol: TCP
+
+# ---------------------------------------------------------------------------
+# Single-port, endpoint-mode example.
+#
+# endpoint mode supplies one backend server per ready pod address from
+# EndpointSlices, addressed by pod IP and the Service's targetPort. It requires
+# the OPNsense firewall to route to the cluster's pod CIDRs, and it supports
+# exactly one TCP port: a multi-port Service with endpoint mode is rejected.
+#
+# To use it, replace the Service above with the document below (or commit it
+# as a separate Service) and make sure "internal" is a created listener in the
+# controller ConfigMap, so it has a bind address to report on the status.
+#
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: web-direct
+#   namespace: prod
+#   annotations:
+#     senselb.io/listeners: "internal"
+#     senselb.io/host: "app.example.com"
+#     senselb.io/target-mode: "endpoint"
+# spec:
+#   type: LoadBalancer
+#   selector:
+#     app: web
+#   ports:
+#     - name: http
+#       port: 80
+#       targetPort: 8080
+#       protocol: TCP

@@ -1,0 +1,192 @@
+# Default values for the senselb chart.
+#
+# The chart deploys the controller, its RBAC and its ConfigMap. It never
+# templates a credential: the provider Secret named by provider.secretName (or
+# provider.secret.existingSecret) is created by your GitOps secret manager and
+# read once by the controller at startup (ADR 0005).
+
+# -- Number of controller replicas.
+#
+# senselb programs one OPNsense firewall per instance and its apply queue is a
+# leader-only runnable. Keep one replica: leader election keeps writes
+# single-writer if this is raised, but a second replica is only a cold standby,
+# and every replica reads its configuration at startup.
+replicaCount: 1
+
+image:
+  # -- Repository of the controller image.
+  repository: ghcr.io/yasn77/senselb
+  # -- Image tag. Defaults to the chart appVersion when empty.
+  tag: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Pull secrets for private image registries.
+imagePullSecrets: []
+
+# -- Override the chart name used in object names.
+nameOverride: ""
+# -- Override the full object name prefix.
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Create the ServiceAccount the controller runs as.
+  create: true
+  # -- ServiceAccount name. Defaults to the controller name; required when
+  # create is false.
+  name: ""
+  # -- Annotations for the ServiceAccount.
+  annotations: {}
+
+rbac:
+  # -- Create the ClusterRole, Role, RoleBinding and ClusterRoleBinding.
+  #
+  # The ClusterRole is cluster-wide by design: senselb publishes Services in any
+  # namespace, and its Events land in the namespace of the Service they concern,
+  # not in the controller's. Disable only when equivalent grants are managed
+  # elsewhere.
+  create: true
+
+leaderElection:
+  # -- Pass --leader-elect. On, exactly one replica programs the firewall.
+  enabled: true
+
+metrics:
+  # -- Address the metrics endpoint binds to; "0" disables it.
+  bindAddress: ":8080"
+  # -- Container port the metrics listener binds to. Keep in step with
+  # bindAddress; the metrics Service targets this port.
+  port: 8080
+  service:
+    # -- Expose the metrics endpoint as a ClusterIP Service.
+    enabled: true
+    # -- Port of the metrics Service.
+    port: 8080
+    # No ServiceMonitor is rendered: the chart stays free of a Prometheus
+    # Operator dependency. Scrape this Service from your own monitoring stack.
+
+health:
+  # -- Address the health probe endpoint binds to; "0" disables it.
+  bindAddress: ":8081"
+  # -- Container port the probes bind to. Keep in step with bindAddress.
+  port: 8081
+
+# -- Quiet window that collapses a burst of Service changes into one apply
+# (--apply-debounce).
+applyDebounce: 2s
+
+# -- Log level: debug, info, warn or error (--log-level).
+logLevel: info
+
+# -- Resource requests and limits for the controller container.
+resources: {}
+  # requests:
+  #   cpu: 50m
+  #   memory: 64Mi
+  # limits:
+  #   memory: 256Mi
+
+# -- Node selector for the controller pod.
+nodeSelector: {}
+
+# -- Tolerations for the controller pod.
+tolerations: []
+
+# -- Affinity for the controller pod.
+affinity: {}
+
+# Controller configuration, rendered into the ConfigMap under the "config.yaml"
+# key and parsed by pkg/config.Load. Load rejects unknown keys, so a key added
+# here that pkg/config does not model fails the controller at startup.
+config:
+  # -- Name of the ConfigMap. The Deployment passes it as --config-name, so it
+  # must be unique in the release namespace.
+  name: senselb-config
+
+  # -- Configuration schema version. v1alpha1 is the only accepted value.
+  schemaVersion: v1alpha1
+  # -- Prefix of the senselb annotations, including its trailing slash.
+  annotationPrefix: senselb.io/
+  # -- Provider-side object store holding senselb's own state.
+  storeName: senselb-store
+
+  # -- Restrict the nodes whose Service endpoints senselb programs. An empty map
+  # selects every node. This is the controller configuration field, not the pod
+  # nodeSelector above.
+  nodeSelector: {}
+
+  # -- Cluster-wide annotation defaults: the middle layer of the precedence
+  # order, after the Service annotation and before the built-ins (ADR 0007).
+  #
+  # The accepted keys are the annotation names without their prefix: enabled,
+  # listeners, host, path, sni, mode, algorithm, target-mode, healthcheck,
+  # healthcheck-path, proxy-protocol, timeout-connect, timeout-server,
+  # timeout-client, maxconn, weight, sticky, tls, tls-cert, tls-passthrough,
+  # backend-custom and backend-name. An unknown key fails the controller at
+  # startup.
+  #
+  # A default can only raise a boolean to true, never lower it, so enabled=false
+  # does not switch a Service off. The timeout keys are accepted by the parser
+  # but rejected as unmodelled: express the same intent through backend-custom.
+  defaults:
+    enabled: true
+    target-mode: nodeport
+    algorithm: roundrobin
+    timeout-connect: ""
+    timeout-server: ""
+    timeout-client: ""
+
+  # -- Shared HAProxy frontends that Services attach to. Each entry either
+  # adopts an existing frontend (adopt, existingFrontend) or creates one from
+  # its bind addresses; defaultBackend is optional on either shape. A created
+  # frontend is named "senselb-<listener>", while the entry name stays the
+  # logical handle used in the listeners annotation.
+  listeners: []
+  # Example:
+  # listeners:
+  #   - name: external
+  #     adopt: true
+  #     existingFrontend: ingress-HTTPS
+  #     mode: ssl
+  #   - name: external-http
+  #     adopt: true
+  #     existingFrontend: HTTP
+  #     mode: http
+  #   - name: internal
+  #     bind:
+  #       - 192.168.1.1:443
+  #     mode: http
+
+provider:
+  # -- Full API base URL of the OPNsense HAProxy API, including the
+  # /api/haproxy path, for example
+  # https://firewall.example.com:8443/api/haproxy. It may be left empty when
+  # the Secret carries a url; a non-empty Secret url wins (ADR 0005).
+  url: ""
+  # -- Secret in the release namespace holding the provider credentials under
+  # the keys key, secret and, optionally, url.
+  secretName: senselb-opnsense
+  # -- Disable TLS certificate verification for the provider. It is on by
+  # default because OPNsense management endpoints commonly present a
+  # self-signed certificate; prefer caCertSecretName and set this to false.
+  insecureSkipVerify: true
+  # -- Secret in the release namespace holding a PEM CA bundle under the key
+  # "ca.crt". Empty uses the system trust store.
+  caCertSecretName: ""
+
+  # Credential handling. The chart never renders a usable credential: it either
+  # points at a Secret you create out of band, or renders an empty placeholder
+  # for documentation. Never commit real values; create the Secret through your
+  # GitOps secret manager.
+  secret:
+    # -- Name of a pre-existing Secret to read instead of provider.secretName.
+    # Mutually exclusive with secret.create.
+    existingSecret: ""
+    # -- Render an empty placeholder Secret for documentation only. The
+    # placeholder holds no credential, so the controller refuses to start until
+    # it is filled in or existingSecret is used. Leave false.
+    create: false
+    # -- Placeholder credential values, used only when create is true.
+    key: ""
+    secret: ""
+    url: ""

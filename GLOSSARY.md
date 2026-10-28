@@ -9,8 +9,8 @@ The definitions below are ordered alphabetically.
 **ACL** *(HAProxy)*
 : A named boolean condition evaluated against a request or response, for
   example matching a `Host` header or a path prefix. senselb renders one ACL
-  per routing rule and references it from an action. A rule only fires when
-  its ACLs match.
+  per non-empty routing term (host, path, SNI) of a rule and references it from
+  that rule. A rule only fires when all of its ACLs match.
 
 **Action / rule** *(HAProxy)*
 : The construct that acts on a request once its ACLs match, such as
@@ -25,8 +25,9 @@ The definitions below are ordered alphabetically.
 
 **Backend** *(HAProxy)*
 : A named server group plus its load-balancing algorithm and health checks.
-  For each Service that attaches to a listener, senselb renders and owns a
-  backend whose servers come from the Service's nodeport mode or endpoint mode.
+  For each TCP port of a Service that attaches to a listener, senselb renders
+  and owns a backend whose servers come from the Service's nodeport mode or
+  endpoint mode.
 
 **ConfigMap defaults**
 : In-cluster configuration that supplies a value when neither the Service
@@ -36,8 +37,9 @@ The definitions below are ordered alphabetically.
 
 **configtest** *(HAProxy)*
 : The validation step that checks a candidate configuration is syntactically
-  correct without applying it. senselb runs exactly one `configtest` per apply
-  batch, ahead of `reconfigure`.
+  correct without applying it. senselb runs one `configtest` per apply batch
+  that has changes, ahead of `reconfigure`; a batch with an empty plan skips
+  both.
 
 **Create**
 : A way of provisioning a listener: senselb creates the HAProxy frontend
@@ -46,18 +48,22 @@ The definitions below are ordered alphabetically.
 
 **EndpointSlice** *(Kubernetes)*
 : The Kubernetes object that lists the ready pod addresses behind a Service.
-  Endpoint mode reads EndpointSlices rather than `Endpoints`.
+  Endpoint mode reads EndpointSlices rather than `Endpoints`. senselb maps a
+  slice to its Service by the `kubernetes.io/service-name` label, falling back
+  to an owner reference of kind `Service`.
 
 **Endpoint mode**
 : A backend target mode, selected by annotation, in which senselb renders one
   backend server per ready pod address from EndpointSlices, addressed by pod IP
   and the Service's `targetPort`. It requires the OPNsense firewall to route to
-  the cluster's pod CIDRs. Contrast with *nodeport mode*.
+  the cluster's pod CIDRs, and it supports a single TCP port per Service.
+  Contrast with *nodeport mode*.
 
 **Finalizer** *(Kubernetes)*
 : A marker on an object that keeps it around until a controller has cleaned
-  up. senselb adds a finalizer so that deleting a Service removes the HAProxy
-  objects senselb created for it before the Service disappears.
+  up. senselb adds the `senselb.io/finalizer` finalizer so that deleting a
+  Service removes the HAProxy objects senselb created for it before the Service
+  disappears.
 
 **Frontend** *(HAProxy)*
 : A bind address (and optional TLS) that accepts client connections and
@@ -77,8 +83,10 @@ The definitions below are ordered alphabetically.
 **Listener**
 : A named shared HAProxy frontend that a Service attaches to via the
   `listeners` annotation. Each listener is either adopted from an existing
-  frontend or created by senselb, and each listener's bind IP becomes an entry
-  in `status.loadBalancer.ingress`.
+  frontend or created by senselb; a created frontend is named
+  `senselb-<listener>`, while the configured name stays the logical handle the
+  annotation uses. Each listener's bind IP becomes an entry in
+  `status.loadBalancer.ingress`.
 
 **NodePort mode**
 : The default backend target mode, in which senselb renders one backend server
@@ -93,8 +101,8 @@ The definitions below are ordered alphabetically.
 
 **Reconfigure** *(HAProxy)*
 : The operation that applies the candidate configuration to a running HAProxy
-  instance. senselb runs exactly one `reconfigure` per apply batch, after a
-  successful `configtest`.
+  instance. senselb runs one `reconfigure` per apply batch that has changes,
+  after a successful `configtest`.
 
 **senselb.io annotation prefix**
 : The prefix that marks a Kubernetes annotation as belonging to senselb, for
@@ -102,10 +110,21 @@ The definitions below are ordered alphabetically.
   annotation set is documented against the default `senselb.io/`.
 
 **Single-flight**
-: A property of the apply queue: overlapping reconcile events are coalesced so
-  that a burst of changes results in one apply rather than one apply per event.
+: A property of the apply pipeline: overlapping reconcile events are coalesced
+  so that a burst of changes results in one apply rather than one apply per
+  event. The provider additionally serialises a whole mutation sequence under
+  its client lock (`WithLock`), so two applies can never interleave their
+  writes.
 
 **Snapshot / rollback**
 : Before any write, senselb records the live configuration. If `configtest`
   fails after a write, senselb rolls its own change back, including restoring
   the linked-list fields of foreign frontends to their snapshot values.
+
+**Store**
+: The ConfigMap-backed inventory of the provider objects senselb owns, named by
+  `storeName` in the controller configuration (default `senselb-store`). Its
+  JSON document lives under the `state` key, keyed by
+  `<namespace>/<service>/<object>` and mapping each object to its provider
+  UUID. It is distinct from the controller configuration ConfigMap, whose YAML
+  document lives under the `config.yaml` key.

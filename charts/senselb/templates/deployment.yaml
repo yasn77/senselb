@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "senselb.controllerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "senselb.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # One active writer programs the firewall. Recreate avoids the overlap a
+  # rolling update would create, where the outgoing pod keeps the Lease until it
+  # terminates; a short control-plane outage is preferable to two pods racing
+  # for the same apply queue.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "senselb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "senselb.selectorLabels" . | nindent 8 }}
+      annotations:
+        # The configuration and credentials are read once per process, so a
+        # change to either must roll the pod.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.provider.secret.create }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "senselb.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: controller
+          image: {{ include "senselb.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Flags only. The provider credentials are read from the Secret by the
+          # controller's own client, so no credential is passed through the
+          # environment.
+          args:
+            - --metrics-bind-address={{ .Values.metrics.bindAddress }}
+            - --health-probe-bind-address={{ .Values.health.bindAddress }}
+            - --leader-elect={{ .Values.leaderElection.enabled }}
+            - --config-namespace={{ .Release.Namespace }}
+            - --config-name={{ .Values.config.name }}
+            - --apply-debounce={{ .Values.applyDebounce }}
+            - --log-level={{ .Values.logLevel }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.health.port }}
+              protocol: TCP
+          # controller-runtime serves the aggregated liveness checks at
+          # /healthz and the readiness checks at /readyz on the probe address.
+          # The controller reads its configuration and credentials before the
+          # manager starts, so a pod that answers either probe has already loaded
+          # a valid config.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- else }}
+          resources: {}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,101 @@
+# Reference controller configuration for senselb.
+#
+# This mirrors what the Helm chart renders into the senselb-config ConfigMap
+# from values.config. The controller reads the "config.yaml" key once at
+# startup, and pkg/config.Load rejects unknown keys, so a misspelt field stops
+# the controller instead of being silently ignored. A change needs a restart
+# of the pod; the chart rolls it automatically because the Deployment carries a
+# checksum of the ConfigMap.
+#
+# The chart sets the ConfigMap's namespace from the Helm release namespace and
+# passes it to the controller as --config-namespace. The names below are the
+# defaults: senselb-system and senselb-config.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: senselb-config
+  namespace: senselb-system
+data:
+  config.yaml: |
+    # Configuration schema version. v1alpha1 is the only version this build
+    # accepts; any other value fails at startup.
+    schemaVersion: v1alpha1
+
+    # Prefix of the senselb annotations, including the trailing slash.
+    annotationPrefix: senselb.io/
+
+    # Shared HAProxy frontends that LoadBalancer Services attach to. The name
+    # of a listener is a logical handle used in the senselb.io/listeners
+    # annotation; it is not necessarily the firewall object's name.
+    #
+    #   adopt:  attach senselb's routing rules to the existing frontend named
+    #           by existingFrontend, leaving its foreign configuration (for
+    #           example ACME-challenge rules) untouched.
+    #   create: senselb creates the frontend itself from the addresses in
+    #           bind. On the firewall the frontend is named
+    #           "senselb-<listener>", so "internal" becomes "senselb-internal".
+    #
+    # A Service's status.loadBalancer.ingress receives one address per
+    # listener it uses: the bind host for a created listener, or the live
+    # frontend's bind host for an adopted one.
+    listeners:
+      # Adopt the existing WAN HTTPS frontend; TLS terminates on that frontend
+      # and keeps its own certificate configuration.
+      - name: external
+        adopt: true
+        existingFrontend: ingress-HTTPS
+        mode: ssl
+
+      # Adopt the existing WAN HTTP frontend.
+      - name: external-http
+        adopt: true
+        existingFrontend: HTTP
+        mode: http
+
+      # Create a new frontend, rendered on the firewall as senselb-internal.
+      # mode is http, tcp or ssl; omitting it means http.
+      - name: internal
+        bind:
+          - 192.168.1.1:443
+        mode: http
+
+    # Cluster-wide annotation defaults: the middle layer of the precedence
+    # order. A Service annotation overrides these, and these override the
+    # built-ins (enabled true, target-mode nodeport, algorithm roundrobin).
+    #
+    # A boolean default can only raise a flag to true. It cannot switch a
+    # Service off, so enabled: false here has no effect; to disable a Service,
+    # annotate it with senselb.io/enabled: "false".
+    defaults:
+      enabled: true
+      target-mode: nodeport
+      algorithm: roundrobin
+      healthcheck: false
+      tls: false
+
+    # Restrict the Nodes that supply nodeport-mode backend servers. An empty
+    # map selects every Node. This is controller configuration, not the
+    # controller pod's own nodeSelector.
+    nodeSelector: {}
+
+    # Provider-side object store that holds senselb's name-to-UUID inventory.
+    storeName: senselb-store
+
+    provider:
+      # Full OPNsense API base URL, including the /api/haproxy path. The
+      # management API normally listens on a non-443 port.
+      url: https://192.168.1.1:8443/api/haproxy
+
+      # Secret in the controller's namespace holding the API credentials under
+      # the keys "key" and "secret", and optionally "url". A non-empty "url"
+      # in that Secret overrides the url above (ADR 0005).
+      secretName: senselb-opnsense
+
+      # The management endpoint commonly presents a self-signed certificate.
+      # This is on for bring-up; prefer caCertSecretName and set this to false
+      # once the certificate is trusted.
+      insecureSkipVerify: true
+
+      # Optional Secret holding a PEM CA bundle under the key "ca.crt". An
+      # empty value uses the system trust store.
+      caCertSecretName: ""

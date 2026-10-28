@@ -15,9 +15,9 @@ One OPNsense firewall is programmed per controller instance. senselb runs a
 single active replica, elected as leader, so that writes to the firewall are
 serialised through one apply queue.
 
-> **Status: work in progress.** The controller is not implemented yet. This
-> repository currently holds the project scaffold, the design record (the
-> ADRs) and this documentation seed. Nothing here will configure your firewall.
+> **Status: early release.** The controller, the OPNsense provider and the Helm
+> chart are implemented. The chart is not yet published to a Helm repository,
+> so install it from this repository; see [Deploying](#deploying).
 
 ## Scope
 
@@ -51,15 +51,16 @@ difference in a single debounced batch.
 - `pkg/controller` — the controller-runtime reconcilers, the debounced
   single-flight apply queue and the finalizer-based cleanup.
 - `charts/senselb` — the Helm chart, consumed by a GitOps-managed manifests
-  repository (arrives in Phase 5).
+  repository.
+- `config/samples` — reference ConfigMap, Secret and LoadBalancer Service
+  manifests.
 - `docs/adr` — the architecture decision records.
 - `GLOSSARY.md` — the project vocabulary.
 
 ## Example: an annotated LoadBalancer Service
 
-The following manifest is **illustrative only**. The controller is not
-implemented yet, so applying this today has no effect beyond creating the
-Service. It shows the shape of the core annotations.
+The following manifest is a complete example. It attaches one Service to two
+adopted listeners and shows the shape of the core annotations.
 
 ```yaml
 apiVersion: v1
@@ -75,7 +76,6 @@ metadata:
     senselb.io/algorithm: "roundrobin"
     senselb.io/healthcheck: "true"
     senselb.io/healthcheck-path: "/healthz"
-    senselb.io/tls: "true"
 spec:
   type: LoadBalancer
   selector:
@@ -88,28 +88,78 @@ spec:
 ```
 
 Here the Service attaches to two listeners — `external` on the WAN address on
-port 443 with TLS, and `external-http` on port 80 — and routes requests for
+port 443 and `external-http` on port 80 — and routes requests for
 `web.example.com` to the cluster, one backend server per ready Node addressed
 by node IP and the Service's `nodePort`.
 
+Both listeners are adopted, so the example sets no `senselb.io/tls` annotation:
+the existing `ingress-HTTPS` frontend already carries the TLS certificate, and
+`tls` is rejected on an adopted listener. To terminate TLS on a listener
+senselb creates, set `tls: "true"` together with `tls-cert`.
+
+A listener that is created rather than adopted is rendered as the frontend
+`senselb-<listener>`, so a listener called `internal` becomes
+`senselb-internal`. The configured name stays the logical handle used in the
+`listeners` annotation.
+
+## Annotations
+
+Annotation keys carry the configured prefix, `senselb.io/` by default. An
+unknown key under that prefix is an error, so a misspelt annotation stops the
+Service's reconcile instead of being ignored; keys with another prefix belong
+to other controllers and are ignored.
+
+Values resolve in three layers: the Service annotation, then the ConfigMap
+`defaults`, then the built-ins. A Service annotation always wins, including a
+blank value that clears an inherited default (annotations that require a value,
+such as `listeners` and the timeouts, still reject a blank value). A ConfigMap
+boolean default can only raise a flag to `true`, never lower it.
+
+| Annotation | Accepted values | Default | Effect |
+| --- | --- | --- | --- |
+| `enabled` | `"true"`, `"false"` | `true` | `"false"` stops management and triggers cleanup. |
+| `listeners` | comma-separated listener names | none, required | Logical listeners from the controller ConfigMap. |
+| `host` | hostname | none | Case-insensitive `Host` header prefix match. |
+| `path` | path prefix | none | Path prefix match. |
+| `sni` | hostname | none | TLS SNI match. |
+| `mode` | `http`, `tcp` | `http` | Backend proxy mode. |
+| `algorithm` | `roundrobin`, `source`, `leastconn`, `static-rr`, `uri`, `random` | `roundrobin` | Backend load-balancing algorithm. |
+| `target-mode` | `nodeport`, `endpoint` | `nodeport` | Where backend servers come from. `endpoint` supports one port only. |
+| `healthcheck` | boolean | `false` | HTTP health check per backend server. |
+| `healthcheck-path` | path | empty | Path for the HTTP health check. |
+| `proxy-protocol` | boolean | `false` | Recorded on the backend health check. |
+| `timeout-connect` | duration, for example `5s` | empty | Parsed, then reported as unmodelled; use `backend-custom`. |
+| `timeout-server` | duration | empty | Parsed, then reported as unmodelled; use `backend-custom`. |
+| `timeout-client` | duration | empty | Parsed, then reported as unmodelled; use `backend-custom`. |
+| `maxconn` | integer, at least 1 | unset | Per-server connection limit. |
+| `weight` | integer, at least 0 | unset | Server weight; 0 means no traffic. |
+| `sticky` | boolean | `false` | Sticky sessions. |
+| `tls` | boolean | `false` | TLS on a created listener's frontend; requires `tls-cert`. Rejected on an adopted listener. |
+| `tls-cert` | certificate reference | empty | Certificate for a created TLS frontend. |
+| `tls-passthrough` | boolean | `false` | Not implemented in v1; setting it reports an error. |
+| `backend-custom` | verbatim directives, one per line | empty | Extra backend directives, such as `timeout connect 5s`. |
+| `backend-name` | name starting with `senselb-` | derived | Custom backend name; multi-port Services get a `-<port>` suffix. |
+
+## Deploying
+
+senselb is deployed GitOps-only: the chart and its non-secret values are
+committed to a GitOps-managed manifests repository, and credentials are
+created by your secret manager, never committed.
+
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — prerequisites, routing, site
+  values, verification, safety and uninstalling.
+- [`charts/senselb`](charts/senselb) — the Helm chart. It is not yet published
+  to a Helm repository; vendor it into your manifests repository.
+- [`config/samples`](config/samples) — reference ConfigMap, Secret and
+  LoadBalancer Service manifests.
+
 ## Documentation
 
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — how to deploy and operate the
+  controller against an OPNsense firewall.
 - [`docs/adr/`](docs/adr/) — the architecture decision records that fix the
   design: scope and portability, the shared-listener address model, backend
   target modes, ownership and conflict handling, OPNsense connectivity and
   secret hygiene, reconciliation and rollback, and annotation precedence.
 - [`GLOSSARY.md`](GLOSSARY.md) — definitions for the vocabulary used across
   the code and the ADRs.
-
-## Work in progress
-
-Two pieces of documentation arrive with the final docs in Phase 5 and are
-intentionally absent for now:
-
-- **Annotation reference** — the full table of `senselb.io/` annotations, their
-  values, defaults and precedence.
-- **Deployment steps** — installing the Helm chart and configuring the
-  controller against an OPNsense firewall.
-
-Until then, the ADRs in [`docs/adr/`](docs/adr/) are the authoritative record
-of the design.
