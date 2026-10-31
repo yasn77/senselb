@@ -24,7 +24,13 @@ permissions:
 jobs:
   release:
     name: Release
-    runs-on: ubuntu-latest
+    # Runs on the self-hosted runners that the gha-runner scale sets
+    # provision automatically for repositories carrying the home-runner
+    # topic (home and hetzner clusters). `self-hosted` is applied by
+    # GitHub; `myrunners` is the label shared by both clusters' scale
+    # sets, so a job may land on either; `home` or `hetzner` would pin
+    # it to one cluster.
+    runs-on: [self-hosted, myrunners]
 
     steps:
       # goreleaser reads the full history and every tag to build the changelog

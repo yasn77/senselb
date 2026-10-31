@@ -1,0 +1,9 @@
+# Custom runner labels for actionlint: these are the labels carried by
+# the self-hosted runner scale sets provisioned for repositories with
+# the home-runner topic (home and hetzner clusters). Declaring them
+# stops actionlint from flagging runs-on labels it cannot infer.
+self-hosted-runner:
+  labels:
+    - myrunners
+    - home
+    - hetzner
