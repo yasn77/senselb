@@ -1,0 +1,55 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)"
+  ],
+  "enabledManagers": [
+    "mise",
+    "github-actions",
+    "gomod",
+    "dockerfile"
+  ],
+  "labels": ["dependencies"],
+  "schedule": ["before 5am on monday"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "description": "Periodically refresh go.sum in place."
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["mise"],
+      "groupName": "mise toolchain",
+      "description": "Pin and update tool versions in .mise.toml (go, golangci-lint, goreleaser, helm)."
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "description": "Update GitHub Actions workflows."
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchPackageNames": [
+        "k8s.io/{/,}**",
+        "sigs.k8s.io/{/,}**"
+      ],
+      "groupName": "kubernetes dependencies",
+      "description": "Group Kubernetes libraries to keep API, machinery and controller-runtime in sync."
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchPackageNames": [
+        "!k8s.io/{/,}**",
+        "!sigs.k8s.io/{/,}**"
+      ],
+      "groupName": "go dependencies",
+      "description": "Update general Go dependencies."
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "groupName": "docker base images",
+      "description": "Update base container images in Dockerfile."
+    }
+  ]
+}
