@@ -101,5 +101,8 @@ jobs:
           version=$(basename "$chart" .tgz)
           version=${version#senselb-}
           printf '%s' "$GITHUB_TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
-          helm push "$chart" oci://ghcr.io/yasn77
-          echo "Pushed oci://ghcr.io/yasn77/senselb:${version}"
+          # The chart lives under the `charts/` namespace so it never collides
+          # with the container image, which occupies ghcr.io/yasn77/senselb
+          # (same chart name, different tag would otherwise overwrite it).
+          helm push "$chart" oci://ghcr.io/yasn77/charts
+          echo "Pushed oci://ghcr.io/yasn77/charts/senselb:${version}"
