@@ -867,15 +867,17 @@ func ToBackendForm(backend haproxy.Backend) url.Values {
 //
 // The form carries the object's own scalar and enum fields. Linkage is the
 // provider's job: defaultBackend and linkedActions must be written there because
-// the provider merges the identifiers of objects it does not own. Binds and
-// certificates are repeated array fields.
+// the provider merges the identifiers of objects it does not own. Certificates
+// are a repeated array field; bind is NOT - the plugin models it as a
+// CSVListField, so it takes one comma-joined value. Posting bind as an array
+// (frontend[bind][]) makes the plugin fail the request with HTTP 500.
 func ToFrontendForm(frontend haproxy.Frontend) url.Values {
 	prefix := objectKinds[kindFrontend]
 	form := url.Values{}
 	form.Set(formKey(prefix, "enabled"), formTrue)
 	form.Set(formKey(prefix, "name"), frontend.Name)
-	for _, bind := range frontend.Bind {
-		form.Add(formListKey(prefix, "bind"), bind)
+	if len(frontend.Bind) > 0 {
+		form.Set(formKey(prefix, "bind"), strings.Join(frontend.Bind, ","))
 	}
 	setIfNotEmpty(form, formKey(prefix, "mode"), string(frontend.Mode))
 	form.Set(formKey(prefix, "ssl_enabled"), booleanValue(frontend.SSLEnabled))
