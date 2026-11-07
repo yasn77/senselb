@@ -7,7 +7,7 @@ apiVersion: v2
 name: senselb
 description: A Kubernetes LoadBalancer controller that programs HAProxy on an OPNsense firewall.
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "0.0.0-dev"
 home: https://github.com/yasn77/senselb
 icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/kubernetes/icon/color/kubernetes-icon-color.svg
