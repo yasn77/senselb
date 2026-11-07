@@ -440,9 +440,11 @@ func TestFormFromSettingsRepeatsMultiSelects(t *testing.T) {
 	if !found {
 		t.Fatal("formFromSettings: frontend not found")
 	}
-	want := []string{"00000000-0000-0000-0000-0000000000e1", "00000000-0000-0000-0000-0000000000e2"}
-	if got := form["frontend[linkedErrorfiles][]"]; !slices.Equal(got, want) {
-		t.Errorf("linkedErrorfiles = %v, want %v", got, want)
+	// Multi-value fields are posted as one comma-separated value: the plugin
+	// rejects the repeated-entry form with HTTP 500.
+	want := "00000000-0000-0000-0000-0000000000e1,00000000-0000-0000-0000-0000000000e2"
+	if got := form.Get("frontend[linkedErrorfiles]"); got != want {
+		t.Errorf("linkedErrorfiles = %q, want %q", got, want)
 	}
 	if got := form.Get("frontend[mode]"); got != "http" {
 		t.Errorf("mode = %q, want the single-value form", got)
@@ -862,7 +864,7 @@ func TestApplyRollbackKeepsMultiSelectFields(t *testing.T) {
 		t.Fatalf("Apply() = %v, want *provider.ErrConfigTest", err)
 	}
 
-	want := []string{firstErrors, secondErrors}
+	want := firstErrors + "," + secondErrors
 	restored := false
 	for _, request := range fake.writeRequests() {
 		if request.Path != "/api/haproxy/settings/setFrontend/"+frontendUUID {
@@ -872,7 +874,7 @@ func TestApplyRollbackKeepsMultiSelectFields(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ParseQuery(%q): %v", request.Body, err)
 		}
-		if got := form["frontend[linkedErrorfiles][]"]; slices.Equal(got, want) {
+		if got := form.Get("frontend[linkedErrorfiles]"); got == want {
 			restored = true
 		}
 	}

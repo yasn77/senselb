@@ -1079,9 +1079,12 @@ func formFromSettings(settings Settings, kind, uuid string) (url.Values, bool) {
 		}
 		if values, isSelect := selectedFieldValues(object[field]); isSelect &&
 			!scalarSelectFields[field] && len(values) > 1 {
-			for _, value := range values {
-				form.Add(formListKey(prefix, field), value)
-			}
+			// Multi-value selects in this plugin (OptionField with Multiple, and
+			// the CSVListFields) are posted as ONE comma-separated value. The
+			// repeated-entry form is answered with HTTP 500 by the model
+			// binding. ba_advertised_protocols defaults to "h2,http11", so this
+			// is hit by any backend that was created with http2 enabled.
+			setCSVField(form, formKey(prefix, field), values)
 			continue
 		}
 		setRawValue(form, formKey(prefix, field), object[field])
