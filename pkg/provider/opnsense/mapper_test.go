@@ -906,8 +906,13 @@ func TestToFrontendForm(t *testing.T) {
 	assertFormValue(t, form, "frontend[ssl_default_certificate]", uuidCertificate)
 	assertFormValue(t, form, "frontend[customOptions]", "option httplog")
 
-	if got, want := form["frontend[bind][]"], []string{"0.0.0.0:443", "[::]:443"}; !slices.Equal(got, want) {
-		t.Errorf("bind = %v, want %v", got, want)
+	// bind is a CSVListField in the plugin model: one comma-joined value, not
+	// an array. An array encoding is rejected by the plugin with HTTP 500.
+	if got, want := form.Get("frontend[bind]"), "0.0.0.0:443,[::]:443"; got != want {
+		t.Errorf("bind = %q, want %q", got, want)
+	}
+	if got := form["frontend[bind][]"]; len(got) != 0 {
+		t.Errorf("bind posted as an array (%v); the plugin expects a CSV string", got)
 	}
 	if got, want := form["frontend[ssl_certificates][]"], []string{uuidCertificate, "another-cert"}; !slices.Equal(got, want) {
 		t.Errorf("ssl certificates = %v, want %v", got, want)
