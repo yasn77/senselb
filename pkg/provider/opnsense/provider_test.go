@@ -486,16 +486,18 @@ func TestApplyAdoptionUnion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ParseQuery(%q): %v", request.Body, err)
 		}
-		if form.Has("frontend[linkedActions][]") {
+		if form.Has("frontend[linkedActions]") {
 			relationForm = form
 		}
 	}
 	if relationForm == nil {
 		t.Fatal("no frontend relation write recorded")
 	}
-	want := []string{ownedUUID, uuidFakeForeignAction}
-	if got := relationForm["frontend[linkedActions][]"]; !slices.Equal(got, want) {
-		t.Errorf("linkedActions = %v, want %v (owned first, foreign preserved)", got, want)
+	// A relation is posted as one comma-separated value, matching the plugin's
+	// ModelRelationField binding.
+	want := ownedUUID + "," + uuidFakeForeignAction
+	if got := relationForm.Get("frontend[linkedActions]"); got != want {
+		t.Errorf("linkedActions = %q, want %q (owned first, foreign preserved)", got, want)
 	}
 
 	_, frontend, found := fake.findObject(kindFrontend, "ingress-HTTPS")
