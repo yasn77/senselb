@@ -194,9 +194,24 @@ func formObject(prefix string, form url.Values) (fakeObject, error) {
 		if err != nil {
 			return nil, err
 		}
+		// The plugin stores a CSV-valued field (bind, the linked* relations) as
+		// a list, even though it takes the value as one comma-separated string.
+		if csvFormFields[field] && len(values) == 1 {
+			object[field] = splitCSV(values[0])
+			continue
+		}
 		object[field] = slices.Clone(values)
 	}
 	return object, nil
+}
+
+// splitCSV mirrors the plugin's storage of a CSV-valued field: an empty value
+// clears the field.
+func splitCSV(value string) []string {
+	if value == "" {
+		return nil
+	}
+	return strings.Split(value, ",")
 }
 
 // formField strips a "prefix[field]" or "prefix[field][]" form key down to the

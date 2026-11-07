@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/yasn77/senselb/pkg/haproxy"
@@ -584,7 +585,7 @@ func (p *Provider) writeRuleRelations(plan haproxy.Plan, snapshot *applySnapshot
 		// The form was read after the object's own write, so a rule with nothing
 		// to relate and no stored relation is already complete: skip the
 		// redundant second write.
-		listKey := formListKey(prefix, "linkedAcls")
+		listKey := formKey(prefix, "linkedAcls")
 		backendKey := formKey(prefix, "use_backend")
 		serverKey := formKey(prefix, "use_server")
 		if slices.Equal(form[listKey], acls) &&
@@ -731,12 +732,12 @@ func (p *Provider) applyParentDelta(
 	base, _ := settingsObjectValues(snapshot.settings, key.kind, uuid)
 
 	actions := mergeLinkage(selectedField(base, "linkedActions"), delta.actionAdds, delta.actionRemoves)
-	setListField(form, formListKey(prefix, "linkedActions"), orderedLinkage(actions, fresh, kindAction))
+	setListField(form, formKey(prefix, "linkedActions"), orderedLinkage(actions, fresh, kindAction))
 
 	switch key.kind {
 	case kindBackend:
 		servers := mergeLinkage(selectedField(base, "linkedServers"), delta.serverAdds, delta.serverRemoves)
-		setListField(form, formListKey(prefix, "linkedServers"), orderedLinkage(servers, fresh, kindServer))
+		setListField(form, formKey(prefix, "linkedServers"), orderedLinkage(servers, fresh, kindServer))
 		// A health check is a shared object the canonical model does not name,
 		// so the live relation is preserved rather than provisioned.
 		setScalarField(form, formKey(prefix, "healthCheck"), selectedValue(base, "healthCheck"))
@@ -1008,11 +1009,19 @@ func refString(ref haproxy.ObjectRef) string {
 // field. They carry a multi-valued relation, so a snapshot form repeats them
 // rather than collapsing them into one value.
 var listFormFields = map[string]bool{
-	"bind":             true,
 	"ssl_certificates": true,
-	"linkedActions":    true,
-	"linkedAcls":       true,
-	"linkedServers":    true,
+}
+
+// csvFormFields are the fields the plugin takes as ONE comma-separated value
+// rather than as repeated field[] entries. bind is a CSVListField and the
+// linked* fields are ModelRelationFields; posting any of them as an array is
+// answered with HTTP 500 by the model binding, so a rollback or a relation
+// merge that used the array form silently failed.
+var csvFormFields = map[string]bool{
+	"bind":          true,
+	"linkedActions": true,
+	"linkedAcls":    true,
+	"linkedServers": true,
 }
 
 // scalarSelectFields are the plugin fields that hold a single selection: enums
@@ -1050,6 +1059,14 @@ func formFromSettings(settings Settings, kind, uuid string) (url.Values, bool) {
 	}
 	form := url.Values{}
 	for _, field := range slices.Sorted(maps.Keys(object)) {
+		if csvFormFields[field] {
+			values, err := selectedKeys(object[field])
+			if err != nil {
+				continue
+			}
+			setCSVField(form, formKey(prefix, field), values)
+			continue
+		}
 		if listFormFields[field] {
 			values, err := selectedKeys(object[field])
 			if err != nil {
@@ -1101,11 +1118,17 @@ func setRawValue(form url.Values, key string, raw any) {
 }
 
 // setListField replaces a repeated form field with values, in order.
+// setListField writes a relation as the single comma-separated value the
+// plugin expects, replacing whatever the form carried before.
 func setListField(form url.Values, key string, values []string) {
 	form.Del(key)
-	for _, value := range values {
-		form.Add(key, value)
-	}
+	form.Set(key, strings.Join(values, ","))
+}
+
+// setCSVField is setListField for a key already rendered with formKey.
+func setCSVField(form url.Values, key string, values []string) {
+	form.Del(key)
+	form.Set(key, strings.Join(values, ","))
 }
 
 // setScalarField replaces a scalar relation, clearing it when value is empty.
