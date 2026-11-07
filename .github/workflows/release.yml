@@ -24,14 +24,11 @@ permissions:
 jobs:
   release:
     name: Release
-    # Runs on the self-hosted runners that the gha-runner scale sets
-    # provision automatically for repositories carrying the home-runner
-    # topic. Runner scale sets match jobs by their declared labels only
-    # (there is no implicit `self-hosted` label), so the job must name
-    # the scale-set label directly. `hetzner` pins the job to the
-    # hetzner cluster (matching the other repos); `myrunners` would let
-    # either the home or hetzner cluster serve the job.
-    runs-on: hetzner
+    # GitHub-hosted runner: the repository is public, and the release must not
+    # depend on a self-hosted scale set being available. The multi-platform
+    # image is built with a container-driver buildx builder created below,
+    # which ubuntu-latest provides.
+    runs-on: ubuntu-latest
 
     steps:
       # goreleaser reads the full history and every tag to build the changelog

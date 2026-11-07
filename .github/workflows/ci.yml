@@ -18,14 +18,10 @@ permissions:
 jobs:
   checks:
     name: Build, test, vet, lint and helm-lint
-    # Runs on the self-hosted runners that the gha-runner scale sets
-    # provision automatically for repositories carrying the home-runner
-    # topic. Runner scale sets match jobs by their declared labels only
-    # (there is no implicit `self-hosted` label), so the job must name
-    # the scale-set label directly. `hetzner` pins the job to the
-    # hetzner cluster (matching the other repos); `myrunners` would let
-    # either the home or hetzner cluster serve the job.
-    runs-on: hetzner
+    # GitHub-hosted runners: this is a public repository, so the hosted
+    # runners are free and more reliable than the self-hosted scale sets,
+    # whose availability depends on the home and Hetzner clusters being up.
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out the repository

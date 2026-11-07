@@ -599,12 +599,15 @@ func decodeAction(
 ) (haproxy.Rule, error) {
 	reader := newFieldReader(object.values, object.path)
 	rule := haproxy.Rule{
-		UUID:              object.uuid,
-		Name:              reader.str("name"),
-		Type:              reader.enum("type"),
-		TestType:          reader.enum("testType"),
-		Operator:          reader.enum("operator"),
-		HTTPRequestAction: reader.str("http_request_action"),
+		UUID:     object.uuid,
+		Name:     reader.str("name"),
+		Type:     reader.enum("type"),
+		TestType: reader.enum("testType"),
+		Operator: reader.enum("operator"),
+		// The plugin serialises this as an OptionField ({"<action>": {"value":..,
+		// "selected":0|1}}), not a plain string; reading it with str() rejects
+		// every live configuration that carries a use_backend rule.
+		HTTPRequestAction: reader.enum("http_request_action"),
 		Custom:            reader.str("custom"),
 	}
 

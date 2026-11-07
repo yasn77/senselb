@@ -313,7 +313,11 @@ const fixtureSettingsJSON = `{
           "use_server": {
             "": {"value": "", "selected": 0}
           },
-          "http_request_action": "",
+          "http_request_action": {
+            "": {"value": "None", "selected": 1},
+            "add-header": {"value": "add-header", "selected": 0},
+            "deny": {"value": "deny", "selected": 0}
+          },
           "custom": ""
         }
       }
